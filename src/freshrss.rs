@@ -1,12 +1,24 @@
 use anyhow::{bail, Result};
+use embedded_svc::http::Method::Get;
 use embedded_svc::{http::client::Client, io::Read};
 use esp_idf_svc::http::client::EspHttpConnection;
 use log::info;
-use embedded_svc::http::Method::Get;
 
-pub fn freshrss_connect(cli: &mut Client<EspHttpConnection>, domain: &str, username: &str, password: &str) -> Result<String> {
-
-    let request_url = ["https://", domain, "/api/greader.php/accounts/ClientLogin?Email=", username, "&Passwd=", password].join("");
+pub fn freshrss_connect(
+    cli: &mut Client<EspHttpConnection>,
+    domain: &str,
+    username: &str,
+    password: &str,
+) -> Result<String> {
+    let request_url = [
+        "https://",
+        domain,
+        "/api/greader.php/accounts/ClientLogin?Email=",
+        username,
+        "&Passwd=",
+        password,
+    ]
+    .join("");
     let request = cli.get(request_url.as_str())?;
     let response = request.submit()?;
 
@@ -29,7 +41,15 @@ pub fn freshrss_connect(cli: &mut Client<EspHttpConnection>, domain: &str, usern
                     info!("{}", response_text);
                 }
             }
-            auth_string = ["GoogleLogin auth=", response_text.rsplit("=").next().expect("Couldn't find auth string").trim_end_matches("\n")].join("");
+            auth_string = [
+                "GoogleLogin auth=",
+                response_text
+                    .rsplit("=")
+                    .next()
+                    .expect("Couldn't find auth string")
+                    .trim_end_matches("\n"),
+            ]
+            .join("");
         }
         _ => bail!("Unexpected response code: {}", status),
     };
@@ -38,9 +58,17 @@ pub fn freshrss_connect(cli: &mut Client<EspHttpConnection>, domain: &str, usern
     Ok(auth_string)
 }
 
-pub fn freshrss_get_articles(cli: &mut Client<EspHttpConnection>, auth_string: &str, domain: &str) -> Result<String>
-{
-    let request_url = ["https://", domain, "/api/greader.php/reader/api/0/stream/contents/reading-list?output=json&n=5"].join("");
+pub fn freshrss_get_articles(
+    cli: &mut Client<EspHttpConnection>,
+    auth_string: &str,
+    domain: &str,
+) -> Result<String> {
+    let request_url = [
+        "https://",
+        domain,
+        "/api/greader.php/reader/api/0/stream/contents/reading-list?output=json&n=5",
+    ]
+    .join("");
     let auth_header = [("Authorization", auth_string)];
     let request = cli.request(Get, &request_url, &auth_header)?;
     let response = request.submit()?;
