@@ -2,17 +2,18 @@ use anyhow::Result;
 use display_interface_spi::{SPIInterface};
 use embedded_graphics::{
     mono_font::{iso_8859_16::FONT_9X18_BOLD, MonoTextStyle},
-    pixelcolor::Rgb666,
+    pixelcolor::Rgb565,
     prelude::{Dimensions, Point, RgbColor, Size},
     primitives::{Primitive, PrimitiveStyleBuilder, Rectangle},
     text::Text,
-    Drawable, Pixel,
+    Drawable, Pixel, iterator::pixel,
 };
 use embedded_svc::http::client::Client;
 use esp_idf_sys::{self as _};
+// use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
 use serde::de::IntoDeserializer;
 
-use std::error::Error;
+use std::{error::Error, ffi::CString, time::Instant};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -89,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         PinDriver::output(peripherals.pins.gpio15)?,
     );
 
-    let mut display = Builder::ili9341_rgb666(di)
+    let mut display = Builder::ili9341_rgb565(di)
         .with_display_size(SCR_WIDTH, SCR_HEIGHT)
         .with_orientation(Orientation::Landscape(false))
         .init(
@@ -98,7 +99,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
-    info!("SIZE : {:?}", display.bounding_box().size);
     Rectangle::new(
         display.bounding_box().top_left,
         Size::new(
@@ -108,15 +108,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     )
     .into_styled(
         PrimitiveStyleBuilder::new()
-            .fill_color(Rgb666::RED)
-            .stroke_color(Rgb666::RED)
+            .fill_color(Rgb565::RED)
+            .stroke_color(Rgb565::RED)
             .stroke_width(1)
             .build(),
     )
     .draw(&mut display)
     .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
-    let style = MonoTextStyle::new(&FONT_9X18_BOLD, Rgb666::BLACK);
+    let style = MonoTextStyle::new(&FONT_9X18_BOLD, Rgb565::BLACK);
     Text::new("Hello Rust le monde!", Point::new(20, 30), style)
         .draw(&mut display)
         .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
@@ -169,6 +169,40 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ret = touch.chip_id(&mut my_i2c)?;
     info!("chip id : {:?}", ret);
 
+
+    // let buffer = DrawBuffer::<{ (SCR_WIDTH as usize * SCR_HEIGHT as usize) as usize }>::default();
+    // let lvgl_display = lvgl::Display::register(buffer, SCR_WIDTH as u32, SCR_HEIGHT as u32, |refresh| {
+    //     let pixels = refresh.colors.map(|pix| Rgb565::new(pix.r(), pix.g(), pix.b()));
+    //     display.set_pixels(0, 0, SCR_WIDTH, SCR_HEIGHT, pixels).map_err(
+    //         |e| anyhow::anyhow!("Display error : {:?}", e)).expect("Error happened");
+    // }).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+
+    // let mut screen = lvgl_display.get_scr_act().map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+
+    // let mut screen_style = Style::default();
+    // screen_style.set_bg_color(Color::from_rgb((255, 255, 255)));
+    // screen_style.set_radius(0);
+    // screen.add_style(Part::Main, &mut screen_style).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+
+    // // Create the arc object
+    // let mut arc = Arc::create(&mut screen).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    // arc.set_size(150, 150).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    // arc.set_align(Align::Center, 0, 10).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    // arc.set_start_angle(135).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    // arc.set_end_angle(135).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+
+    // let mut loading_lbl = Label::create(&mut screen).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    // loading_lbl.set_align(Align::OutTopMid, 0, 0).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    // //loading_lbl.set_label_align(LabelAlign::Center)?;
+
+    // let mut loading_style = Style::default();
+    // loading_style.set_text_color(Color::from_rgb((0, 0, 0)));
+    // loading_lbl.add_style(Part::Main, &mut loading_style).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+
+    // let mut angle = 0;
+    // let mut forward = true;
+    // let mut i = 0;
+
     loop {
         let is_touched = touch
             .td_status(&mut my_i2c)
@@ -181,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 info!("pos fucked : {:?}", pos);
                 continue;
             }
-            Pixel(Point::new((SCR_WIDTH - pos.1).into(), pos.0.into()), Rgb666::GREEN).draw(&mut display).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?
+            Pixel(Point::new((SCR_WIDTH - pos.1).into(), pos.0.into()), Rgb565::GREEN).draw(&mut display).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?
         }
         sleep(Duration::from_millis(10));
     }
