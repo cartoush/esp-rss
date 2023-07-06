@@ -38,7 +38,8 @@ serde = "1.0.164"
 serde_json = "1.0"
 mipidsi = "0.7.1"
 shared-bus = "0.2.5"
-# lvgl = {version = "0.6.2", default-features = false, features = ["alloc", "embedded_graphics", "unsafe_no_autoinit"]}
+lvgl = {version = "0.6.2", default-features = false, features = ["alloc", "embedded_graphics", "unsafe_no_autoinit"]}
+lvgl-sys = {version = "0.6.2"}
 
 [build-dependencies]
 embuild = {version = "0.31.2", default-features = false }

@@ -10,7 +10,7 @@ use embedded_graphics::{
 };
 use embedded_svc::http::client::Client;
 use esp_idf_sys::{self as _};
-// use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
+use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
 use serde::de::IntoDeserializer;
 
 use std::{error::Error, ffi::CString, time::Instant};
@@ -170,14 +170,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     info!("chip id : {:?}", ret);
 
 
-    // let buffer = DrawBuffer::<{ (SCR_WIDTH as usize * SCR_HEIGHT as usize) as usize }>::default();
-    // let lvgl_display = lvgl::Display::register(buffer, SCR_WIDTH as u32, SCR_HEIGHT as u32, |refresh| {
-    //     let pixels = refresh.colors.map(|pix| Rgb565::new(pix.r(), pix.g(), pix.b()));
-    //     display.set_pixels(0, 0, SCR_WIDTH, SCR_HEIGHT, pixels).map_err(
-    //         |e| anyhow::anyhow!("Display error : {:?}", e)).expect("Error happened");
-    // }).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    let buffer = DrawBuffer::<{ (SCR_WIDTH as usize * SCR_HEIGHT as usize) as usize }>::default();
+    let lvgl_display = lvgl::Display::register(buffer, SCR_WIDTH as u32, SCR_HEIGHT as u32, |refresh| {
+        let pixels = refresh.colors.map(|pix| Rgb565::new(pix.r(), pix.g(), pix.b()));
+        display.set_pixels(0, 0, SCR_WIDTH, SCR_HEIGHT, pixels).map_err(
+            |e| anyhow::anyhow!("Display error : {:?}", e)).expect("Error happened");
+    }).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
-    // let mut screen = lvgl_display.get_scr_act().map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+    let mut screen = lvgl_display.get_scr_act().map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
     // let mut screen_style = Style::default();
     // screen_style.set_bg_color(Color::from_rgb((255, 255, 255)));
