@@ -10,14 +10,14 @@ use embedded_graphics::{
 };
 use embedded_svc::http::client::Client;
 use esp_idf_sys::{self as _};
-use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
+// use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
 use serde::de::IntoDeserializer;
 
-use std::{error::Error, ffi::CString, time::Instant};
+use std::{error::Error, ffi::CString, time::Instant, panic, io::Write};
 use std::thread::sleep;
 use std::time::Duration;
 
-use esp_idf_hal::{delay, gpio::AnyIOPin, gpio::PinDriver, i2c, prelude::*, spi};
+use esp_idf_hal::{delay, gpio::AnyIOPin, gpio::PinDriver, i2c, prelude::*, spi, rmt::config};
 use esp_idf_svc::http::client::*;
 
 use mipidsi::*;
@@ -36,13 +36,17 @@ pub struct Config {
     #[default("")]
     wifi_ssid: &'static str,
     #[default("")]
-    wifi_psk: &'static str,
+    wifi_pwd: &'static str,
     #[default("")]
     rss_domain: &'static str,
     #[default("")]
     rss_username: &'static str,
     #[default("")]
     rss_password: &'static str,
+    #[default("")]
+    host_ip: &'static str,
+    #[default(8529)]
+    host_port: u16,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -51,18 +55,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         esp_idf_sys::nvs_flash_init();
 
-        // Disable IDLE task WatchDogTask on this CPU.
-        esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetIdleTaskHandleForCPU(
-            esp_idf_hal::cpu::core() as u32,
-        ));
+        // // Disable IDLE task WatchDogTask on this CPU.
+        // esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetIdleTaskHandleForCPU(
+        //     esp_idf_hal::cpu::core() as u32,
+        // ));
 
-        // Enable WatchDogTask on the main (=this) task.
-        esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetCurrentTaskHandle());
-        let ret = esp_idf_sys::esp_task_wdt_status(esp_idf_sys::xTaskGetCurrentTaskHandle());
-        info!("ret : {:?}", ret);
-        esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetIdleTaskHandle());
-        let ret = esp_idf_sys::esp_task_wdt_status(esp_idf_sys::xTaskGetIdleTaskHandle());
-        info!("ret : {:?}", ret);
+        // // Enable WatchDogTask on the main (=this) task.
+        // esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetCurrentTaskHandle());
+        // let ret = esp_idf_sys::esp_task_wdt_status(esp_idf_sys::xTaskGetCurrentTaskHandle());
+        // info!("ret : {:?}", ret);
+        // esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetIdleTaskHandle());
+        // let ret = esp_idf_sys::esp_task_wdt_status(esp_idf_sys::xTaskGetIdleTaskHandle());
+        // info!("ret : {:?}", ret);
     };
 
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -132,19 +136,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     PinDriver::enable_interrupt(&mut pin5)?;
     let mut touch = ft6x06::Ft6X06::new(&my_i2c, 0x38, pin5)?;
 
-    // let mut touch = ft6x06::Ft6x06Spi::new(
-    //     &my_spi,
-    //     PinDriver::output(peripherals.pins.gpio18)?,
-    //     PinDriver::input(peripherals.pins.gpio5)?,
-    // )?;
-
+    info!("Waiting for wifi to connect");
+    sleep(Duration::from_millis(100));
     // Connect to the Wi-Fi network
-    // let _wifi = wifi::wifi(
-    //     app_config.wifi_ssid,
-    //     app_config.wifi_psk,
-    //     peripherals.modem,
-    //     sysloop,
-    // )?;
+    let _wifi = wifi::wifi(
+        app_config.wifi_ssid,
+        app_config.wifi_pwd,
+        peripherals.modem,
+        sysloop,
+    )?;
+    while _wifi.is_connected()? == false {sleep(Duration::from_millis(100));}
+    // info!("Wifi is connected");
 
     // let conn = EspHttpConnection::new(&Configuration {
     //     use_global_ca_store: true,
@@ -166,42 +168,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // info!("articles : {:?}", articles);
 
-    let ret = touch.chip_id(&mut my_i2c)?;
-    info!("chip id : {:?}", ret);
+    sleep(Duration::from_secs(1));
+    let host_address = format!("{}:{}", app_config.host_ip, app_config.host_port);
+    info!("host_address : {:?}", host_address);
+    let mut tcp = std::net::TcpStream::connect(host_address.as_str())?;
+    let to_send = "coucou".as_bytes();
+    tcp.write_all(to_send)?;
 
+    // let buffer = DrawBuffer::<{ (SCR_WIDTH as usize * SCR_HEIGHT as usize) as usize }>::default();
+    // let lvgl_display = lvgl::Display::register(buffer, SCR_WIDTH as u32, SCR_HEIGHT as u32, |refresh| {
+    //     let pixels = refresh.colors.map(|pix| Rgb565::new(pix.r(), pix.g(), pix.b()));
+    //     display.set_pixels(0, 0, SCR_WIDTH, SCR_HEIGHT, pixels).map_err(
+    //         |e| anyhow::anyhow!("Display error : {:?}", e)).expect("Error happened");
+    // }).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
-    let buffer = DrawBuffer::<{ (SCR_WIDTH as usize * SCR_HEIGHT as usize) as usize }>::default();
-    let lvgl_display = lvgl::Display::register(buffer, SCR_WIDTH as u32, SCR_HEIGHT as u32, |refresh| {
-        let pixels = refresh.colors.map(|pix| Rgb565::new(pix.r(), pix.g(), pix.b()));
-        display.set_pixels(0, 0, SCR_WIDTH, SCR_HEIGHT, pixels).map_err(
-            |e| anyhow::anyhow!("Display error : {:?}", e)).expect("Error happened");
-    }).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    let mut screen = lvgl_display.get_scr_act().map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    // let mut screen_style = Style::default();
-    // screen_style.set_bg_color(Color::from_rgb((255, 255, 255)));
-    // screen_style.set_radius(0);
-    // screen.add_style(Part::Main, &mut screen_style).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    // // Create the arc object
-    // let mut arc = Arc::create(&mut screen).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-    // arc.set_size(150, 150).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-    // arc.set_align(Align::Center, 0, 10).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-    // arc.set_start_angle(135).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-    // arc.set_end_angle(135).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    // let mut loading_lbl = Label::create(&mut screen).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-    // loading_lbl.set_align(Align::OutTopMid, 0, 0).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-    // //loading_lbl.set_label_align(LabelAlign::Center)?;
-
-    // let mut loading_style = Style::default();
-    // loading_style.set_text_color(Color::from_rgb((0, 0, 0)));
-    // loading_lbl.add_style(Part::Main, &mut loading_style).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    // let mut angle = 0;
-    // let mut forward = true;
-    // let mut i = 0;
+    // let mut screen = lvgl_display.get_scr_act().map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
     loop {
         let is_touched = touch
@@ -210,7 +191,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if is_touched > 0 && is_touched != 255 {
             // returns (y, x)
             let pos = touch.get_coordinates(&mut my_i2c)?;
-            info!("touch coordinates : {:?}", pos);
+            info!("is_touched : {:?} touch coordinates : {:?}", is_touched, pos);
             if pos.0 > SCR_HEIGHT || pos.1 > SCR_WIDTH {
                 info!("pos fucked : {:?}", pos);
                 continue;
