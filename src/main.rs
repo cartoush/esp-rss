@@ -10,7 +10,7 @@ use embedded_graphics::{
     Drawable, Pixel,
 };
 use embedded_svc::http::client::Client;
-use esp_idf_sys::{self as _};
+use esp_idf_sys::{self as _, eTaskState};
 // use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
 use serde::de::IntoDeserializer;
 
@@ -19,7 +19,7 @@ use std::time::Duration;
 use std::{cell::RefCell, error::Error, ffi::CString, io::Write, panic, rc::Rc, time::Instant};
 
 use esp_idf_hal::{delay, gpio::AnyIOPin, gpio::PinDriver, i2c, prelude::*, rmt::config, spi};
-use esp_idf_svc::{http::client::*, timer::EspTimerService};
+use esp_idf_svc::{http::client::*, timer::{EspTimerService, Task}};
 
 use slint;
 
@@ -51,6 +51,8 @@ pub struct Config {
     #[default(8529)]
     host_port: u16,
 }
+
+slint::include_modules!();
 
 fn main() -> Result<(), Box<dyn Error>> {
     esp_idf_sys::link_patches();
@@ -170,12 +172,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // info!("articles : {:?}", articles);
 
-    slint::platform::set_platform(Box::new(EspBackend::default()))
-        .expect("backend already initialized");
     let window = slint::platform::software_renderer::MinimalSoftwareWindow::new(
         slint::platform::software_renderer::RepaintBufferType::ReusedBuffer,
     );
     window.set_size(slint::PhysicalSize::new(SCR_WIDTH as _, SCR_HEIGHT as _));
+    let timer = EspTimerService::new()?;
+    slint::platform::set_platform(Box::new(EspBackend{
+        window: window.clone(),
+        timer: timer,
+    }))
+        .expect("backend already initialized");
     let mut line_buffer = [slint::platform::software_renderer::Rgb565Pixel(0); SCR_WIDTH as usize];
 
     HelloWorld::new().unwrap().run().unwrap();
@@ -217,6 +223,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?
         }
 
+        slint::platform::update_timers_and_animations();
         window.draw_if_needed(|renderer| {
             info!("drawing ");
             renderer.render_by_line(DisplayWrapper {
@@ -261,9 +268,9 @@ impl<T: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>
     }
 }
 
-#[derive(Default)]
 struct EspBackend {
-    window: RefCell<Option<Rc<slint::platform::software_renderer::MinimalSoftwareWindow>>>,
+    window: Rc<slint::platform::software_renderer::MinimalSoftwareWindow>,
+    timer: EspTimerService<Task>,
 }
 
 impl slint::platform::Platform for EspBackend {
@@ -273,35 +280,15 @@ impl slint::platform::Platform for EspBackend {
         let window = slint::platform::software_renderer::MinimalSoftwareWindow::new(
             slint::platform::software_renderer::RepaintBufferType::ReusedBuffer,
         );
-        self.window.replace(Some(window.clone()));
-        Ok(window)
+        Ok(window.clone())
     }
 
     fn duration_since_start(&self) -> core::time::Duration {
-        let timer = match EspTimerService::new() {
-            Ok(it) => it,
-            Err(_) => return core::time::Duration::default(),
-        };
-        timer.now()
+        self.timer.now()
     }
 
     fn run_event_loop(&self) -> Result<(), slint::PlatformError> {
         info!("event loop called");
         Ok(())
     }
-}
-
-slint::slint! {
-export component HelloWorld inherits Rectangle {
-    width: 320px;
-    height: 240px;
-    background: #a16277;
-
-    Text {
-       y: parent.height / 2;
-       x: parent.width / 2;
-       text: "Hello, world";
-       color: red;
-    }
-}
 }
