@@ -1,27 +1,25 @@
 use anyhow::Result;
 use display_interface_spi::SPIInterface;
 use embedded_graphics::{
-    iterator::pixel,
-    mono_font::{iso_8859_16::FONT_9X18_BOLD, MonoTextStyle},
     pixelcolor::{raw::RawU16, Rgb565},
-    prelude::{Dimensions, DrawTarget, Point, RgbColor, Size},
-    primitives::{Primitive, PrimitiveStyleBuilder, Rectangle},
-    text::Text,
-    Drawable, Pixel,
+    prelude::{DrawTarget, Point, RgbColor, Size},
+    Pixel,
+    Drawable,
 };
 use embedded_svc::http::client::Client;
-use esp_idf_sys::{self as _, eTaskState};
-// use lvgl::{DrawBuffer, style::Style, Color, Part, Align, widgets::{Label, Arc}, Widget};
-use serde::de::IntoDeserializer;
+use esp_idf_sys::{self as _, abs};
 
-use std::thread::sleep;
 use std::time::Duration;
-use std::{cell::RefCell, error::Error, ffi::CString, io::Write, panic, rc::Rc, time::Instant};
+use std::{error::Error, io::Write, rc::Rc};
+use std::thread::sleep;
 
-use esp_idf_hal::{delay, gpio::AnyIOPin, gpio::PinDriver, i2c, prelude::*, rmt::config, spi};
-use esp_idf_svc::{http::client::*, timer::{EspTimerService, Task}};
+use esp_idf_hal::{delay, gpio::AnyIOPin, gpio::PinDriver, i2c, prelude::*, spi};
+use esp_idf_svc::{
+    http::client::*,
+    timer::{EspTimerService, Task},
+};
 
-use slint;
+use slint::{self, LogicalPosition, VecModel, SharedString, ModelRc};
 
 use mipidsi::*;
 
@@ -59,19 +57,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     unsafe {
         esp_idf_sys::nvs_flash_init();
-
-        // // Disable IDLE task WatchDogTask on this CPU.
-        // esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetIdleTaskHandleForCPU(
-        //     esp_idf_hal::cpu::core() as u32,
-        // ));
-
-        // // Enable WatchDogTask on the main (=this) task.
-        // esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetCurrentTaskHandle());
-        // let ret = esp_idf_sys::esp_task_wdt_status(esp_idf_sys::xTaskGetCurrentTaskHandle());
-        // info!("ret : {:?}", ret);
-        // esp_idf_sys::esp_task_wdt_delete(esp_idf_sys::xTaskGetIdleTaskHandle());
-        // let ret = esp_idf_sys::esp_task_wdt_status(esp_idf_sys::xTaskGetIdleTaskHandle());
-        // info!("ret : {:?}", ret);
     };
 
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -108,28 +93,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
 
-    Rectangle::new(
-        display.bounding_box().top_left,
-        Size::new(
-            display.bounding_box().size.height,
-            display.bounding_box().size.width,
-        ),
-    )
-    .into_styled(
-        PrimitiveStyleBuilder::new()
-            .fill_color(Rgb565::RED)
-            .stroke_color(Rgb565::RED)
-            .stroke_width(1)
-            .build(),
-    )
-    .draw(&mut display)
-    .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    let style = MonoTextStyle::new(&FONT_9X18_BOLD, Rgb565::BLACK);
-    Text::new("Hello Rust le monde!", Point::new(20, 30), style)
-        .draw(&mut display)
-        .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
     let mut my_i2c = i2c::I2cDriver::new(
         peripherals.i2c1,
         peripherals.pins.gpio22,
@@ -140,51 +103,63 @@ fn main() -> Result<(), Box<dyn Error>> {
     PinDriver::enable_interrupt(&mut pin5)?;
     let mut touch = ft6x06::Ft6X06::new(&my_i2c, 0x38, pin5)?;
 
-    // info!("Waiting for wifi to connect");
-    // sleep(Duration::from_millis(100));
-    // // Connect to the Wi-Fi network
-    // let _wifi = wifi::wifi(
-    //     app_config.wifi_ssid,
-    //     app_config.wifi_pwd,
-    //     peripherals.modem,
-    //     sysloop,
-    // )?;
-    // while _wifi.is_connected()? == false {sleep(Duration::from_millis(100));}
-    // info!("Wifi is connected");
+    info!("Waiting for wifi to connect");
+    sleep(Duration::from_millis(100));
+    // Connect to the Wi-Fi network
+    let _wifi = wifi::wifi(
+        app_config.wifi_ssid,
+        app_config.wifi_pwd,
+        peripherals.modem,
+        sysloop,
+    )?;
+    while _wifi.is_connected()? == false {sleep(Duration::from_millis(100));}
+    info!("Wifi is connected");
 
-    // let conn = EspHttpConnection::new(&Configuration {
-    //     use_global_ca_store: true,
-    //     crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
-    //     ..Default::default()
-    // })?;
-    // let mut cli = Client::wrap(conn);
+    // Getting RSS articles
+    let conn = EspHttpConnection::new(&Configuration {
+        use_global_ca_store: true,
+        crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
+        ..Default::default()
+    })?;
+    let mut cli = Client::wrap(conn);
 
-    // let auth_string = freshrss::freshrss_connect(
-    //     &mut cli,
-    //     app_config.rss_domain,
-    //     app_config.rss_username,
-    //     app_config.rss_password,
-    // )?;
+    let auth_string = freshrss::freshrss_connect(
+        &mut cli,
+        app_config.rss_domain,
+        app_config.rss_username,
+        app_config.rss_password,
+    )?;
 
-    // let str_articles =
-    //     freshrss::freshrss_get_articles(&mut cli, &auth_string, app_config.rss_domain)?;
-    // let articles: serde_rss::RssReadingList = serde_json::from_str(str_articles.as_str())?;
+    let str_articles =
+        freshrss::freshrss_get_articles(&mut cli, &auth_string, app_config.rss_domain, 5)?;
+    let articles: serde_rss::RssReadingList = serde_json::from_str(str_articles.as_str())?;
 
-    // info!("articles : {:?}", articles);
+    info!("article titles:");
+    let mut article_titles: Vec<SharedString> = vec![];
+    for rss_article in articles.items.iter() {
+        info!("title : {}", rss_article.title);
+        article_titles.push(rss_article.title.clone().into());
+    }
 
     let window = slint::platform::software_renderer::MinimalSoftwareWindow::new(
         slint::platform::software_renderer::RepaintBufferType::ReusedBuffer,
     );
     window.set_size(slint::PhysicalSize::new(SCR_WIDTH as _, SCR_HEIGHT as _));
     let timer = EspTimerService::new()?;
-    slint::platform::set_platform(Box::new(EspBackend{
+    slint::platform::set_platform(Box::new(EspBackend {
         window: window.clone(),
         timer: timer,
     }))
-        .expect("backend already initialized");
+    .expect("backend already initialized");
     let mut line_buffer = [slint::platform::software_renderer::Rgb565Pixel(0); SCR_WIDTH as usize];
 
-    HelloWorld::new().unwrap().run().unwrap();
+    let app = RssPage::new().unwrap();
+    let titles : Rc<VecModel<SharedString>> =
+        Rc::new(VecModel::from(article_titles));
+    // Convert it to a ModelRc.
+    let titles_rc = ModelRc::from(titles.clone());
+    app.set_titles(titles_rc);
+    app.show().unwrap();
 
     // sleep(Duration::from_secs(1));
     // let host_address = format!("{}:{}", app_config.host_ip, app_config.host_port);
@@ -193,15 +168,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let to_send = "coucou".as_bytes();
     // tcp.write_all(to_send)?;
 
-    // let buffer = DrawBuffer::<{ (SCR_WIDTH as usize * SCR_HEIGHT as usize) as usize }>::default();
-    // let lvgl_display = lvgl::Display::register(buffer, SCR_WIDTH as u32, SCR_HEIGHT as u32, |refresh| {
-    //     let pixels = refresh.colors.map(|pix| Rgb565::new(pix.r(), pix.g(), pix.b()));
-    //     display.set_pixels(0, 0, SCR_WIDTH, SCR_HEIGHT, pixels).map_err(
-    //         |e| anyhow::anyhow!("Display error : {:?}", e)).expect("Error happened");
-    // }).map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
-    // let mut screen = lvgl_display.get_scr_act().map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
-
+    let mut was_touched = false;
+    let mut last_pos = (0, 0);
+    let button = slint::platform::PointerEventButton::Left;
     loop {
         let is_touched = touch.td_status(&mut my_i2c).expect("is_touched fail");
         if is_touched > 0 && is_touched != 255 {
@@ -215,12 +184,57 @@ fn main() -> Result<(), Box<dyn Error>> {
                 info!("pos fucked : {:?}", pos);
                 continue;
             }
-            Pixel(
-                Point::new((SCR_WIDTH - pos.1).into(), pos.0.into()),
-                Rgb565::GREEN,
-            )
-            .draw(&mut display)
-            .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?
+            // Pixel(
+            //     Point::new((SCR_WIDTH - pos.1).into(), pos.0.into()),
+            //     Rgb565::GREEN,
+            // )
+            // .draw(&mut display)
+            // .map_err(|e| anyhow::anyhow!("Display error : {:?}", e))?;
+
+            if !was_touched {
+                info!("Pointer pressed event");
+                window.dispatch_event(slint::platform::WindowEvent::PointerPressed {
+                    position: LogicalPosition {
+                        x: pos.1 as _,
+                        y: pos.0 as _,
+                    },
+                    button: button,
+                });
+                last_pos = pos;
+            } else if last_pos != pos {
+                let delta_x = last_pos.1 as i32 - pos.1 as i32;
+                let delta_y = last_pos.0 as i32 - pos.0 as i32;
+                let moved_enough = unsafe {
+                    abs(delta_x) > 10 || abs(delta_y) > 10
+                };
+                info!(
+                    "deltas : x : {} y : {}, moved_enough: {}",
+                    delta_x, delta_y, moved_enough
+                );
+                if moved_enough {
+                    info!("Pointer scrolled event");
+                    window.dispatch_event(slint::platform::WindowEvent::PointerScrolled {
+                        position: LogicalPosition {
+                            x: last_pos.1 as _,
+                            y: last_pos.0 as _,
+                        },
+                        delta_x: -delta_x as _,
+                        delta_y: -delta_y as _,
+                    });
+                    last_pos = pos;
+                }
+            }
+            was_touched = true;
+        } else if was_touched {
+            info!("Pointer released event");
+            window.dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                position: LogicalPosition {
+                    x: last_pos.1 as _,
+                    y: last_pos.0 as _,
+                },
+                button: button,
+            });
+            was_touched = false;
         }
 
         slint::platform::update_timers_and_animations();
@@ -231,7 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 line_buffer: &mut line_buffer,
             });
         });
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(100));
     }
 }
 
@@ -277,10 +291,7 @@ impl slint::platform::Platform for EspBackend {
     fn create_window_adapter(
         &self,
     ) -> Result<Rc<dyn slint::platform::WindowAdapter>, slint::PlatformError> {
-        let window = slint::platform::software_renderer::MinimalSoftwareWindow::new(
-            slint::platform::software_renderer::RepaintBufferType::ReusedBuffer,
-        );
-        Ok(window.clone())
+        Ok(self.window.clone())
     }
 
     fn duration_since_start(&self) -> core::time::Duration {
@@ -292,3 +303,7 @@ impl slint::platform::Platform for EspBackend {
         Ok(())
     }
 }
+
+// pub fn button_clicked() {
+//     info!("button clicked")
+// }

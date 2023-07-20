@@ -1,12 +1,31 @@
-export component HelloWorld inherits Rectangle {
+import { VerticalBox, ListView, HorizontalBox , Button} from "std-widgets.slint";
+
+component RssArticle inherits Rectangle {
+    in property <string> title;
+
     width: 320px;
-    height: 240px;
-    background: #a16277;
+    height: 25px;
 
     Text {
-       y: parent.height / 2;
-       x: parent.width / 2;
-       text: "Hello, world";
-       color: red;
+        text: title;
+    }
+}
+
+export component RssPage inherits VerticalBox {
+    in property <[string]> titles;
+
+    width: 320px;
+    height: 240px;
+
+    // callback button_clicked;
+    // Button {
+    //     text: "hello";
+    //     clicked => { root.button_clicked(); }
+    // }
+
+    ListView {
+        for article_title in root.titles: article_titles := RssArticle {
+            title: article_title;
+        }
     }
 }

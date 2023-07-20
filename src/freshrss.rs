@@ -62,11 +62,13 @@ pub fn freshrss_get_articles(
     cli: &mut Client<EspHttpConnection>,
     auth_string: &str,
     domain: &str,
+    articles_nb: u8
 ) -> Result<String> {
     let request_url = [
         "https://",
         domain,
-        "/api/greader.php/reader/api/0/stream/contents/reading-list?output=json&n=5",
+        "/api/greader.php/reader/api/0/stream/contents/reading-list?output=json&n=",
+        articles_nb.to_string().as_str(),
     ]
     .join("");
     let auth_header = [("Authorization", auth_string)];
